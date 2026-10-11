@@ -129,8 +129,8 @@ Realm updates send only explicitly managed fields, preserving other realm
 settings. The user-profile schema is managed as a whole: add future attributes
 to its configuration file before applying. SMTP and the email required actions
 are explicitly disabled on every apply; future mail support must change that
-configuration deliberately. Users and client registrations are not managed by
-this slice. Do not use realm deletion or full replacement imports for updates.
+configuration deliberately. Users and other client registrations are not managed
+by this configuration. Do not use realm deletion or full replacement imports for updates.
 
 Passwords require at least 15 characters, with spaces/passphrases allowed, no
 composition rules, no periodic expiry and no blocklist. Temporary lockouts use
@@ -147,11 +147,91 @@ and subject, never email or display name.
 
 Keycloak's length validator trims for validation; trimming persisted profile
 values is not assumed. Kochwiki must normalize the display name when consuming
-the claim in the later integration slice. A shared display-name OIDC mapper is
-also deferred until the application client is configured.
+the claim in the later integration slice. The Kochwiki client now includes a
+display-name ID-token mapper.
 
 References: [realm import limitations](https://www.keycloak.org/server/importExport),
 [Admin CLI and realm configuration](https://www.keycloak.org/docs/26.8.0/server_admin/).
+
+## Kochwiki OIDC client
+
+The managed confidential client `kochwiki` uses Authorization Code flow with
+mandatory PKCE `S256` and backend client-secret authentication. Direct Access
+Grants, Implicit Flow, service accounts, device authorization and CIBA are
+disabled. Browser token requests and CORS origins are not configured: the future
+FastAPI integration owns code exchange. No Kochwiki endpoints or sessions are
+implemented by this repository.
+
+Set these values in the selected deployment's ignored `.env` before applying:
+
+- `KOCHWIKI_CLIENT_SECRET`: a different random secret per environment, at least
+  32 characters without whitespace. The example placeholder is rejected. The
+  backend will later receive the same value through its own environment.
+- `KOCHWIKI_REDIRECT_URIS`: space-separated exact callback URLs, without wildcards.
+  The local example allows `http://localhost:8000/api/auth/callback` and
+  `http://localhost:4200/api/auth/callback`.
+- `KOCHWIKI_LOGOUT_REDIRECT_URIS`: space-separated exact logout return URLs.
+  The local example uses `/signed-out` on those two origins.
+- `KOCHWIKI_TEST_CALLBACK_URL`: one local test callback, default
+  `http://localhost:8765/callback`. Only local Compose includes this additional
+  redirect. Staging and production ignore this variable.
+
+For staging/production, replace the example application URL lists with their
+HTTPS equivalents. The apply wrapper rejects non-HTTPS application URLs there;
+local HTTP is accepted only on loopback hosts. It also rejects URL credentials,
+queries, fragments and wildcards. Certificates for the provider remain deferred.
+
+The Compose `x-kochwiki` extension resolves the client values through normal
+Compose environment interpolation. It is metadata for the apply wrapper, not
+container configuration; the secret is not added to Nginx, PostgreSQL or Keycloak
+container environment variables. Updating these client values requires applying
+configuration, not restarting containers. The wrapper sends rendered client JSON
+over stdin; the helper uses a private temporary file inside Keycloak and clears
+its contents on exit. Never print full resolved Compose configuration, enable
+shell tracing, or commit `.env`.
+
+`config/kochwiki/kochwiki-client.json` defines fixed settings.
+`config/kochwiki/kochwiki-mapper-*.json` defines three ID-token-only mappers for `email`,
+`email_verified` and `displayName`. Keycloak supplies standard `iss`, `sub`,
+audience, expiry and other protocol claims. New clients start without additional
+client scopes; existing scope assignments and unrelated mappers remain unmanaged.
+The mapper values retain provider whitespace, so Kochwiki must trim display names.
+Email remains unverified initially.
+
+Repeat apply updates the existing client and managed mappers by their identifiers,
+without recreating users or clients or generating a new secret. The configured
+secret is reapplied unchanged. Changing it deliberately rotates it and requires
+a coordinated backend update. Apply remains sequential and nontransactional.
+
+### Local OIDC verification
+
+The stand-in callback verifies the provider configuration before Kochwiki's
+backend integration exists. It binds only to `127.0.0.1` and exists only while
+the test runs. It automates the hosted login forms; it does not test browser
+rendering or implement application sessions.
+
+```powershell
+python -m venv .venv
+./.venv/Scripts/python.exe -m pip install -r tests/requirements.txt
+./.venv/Scripts/python.exe -u tests/verify_oidc.py --allow-user-creation
+```
+
+The tool reads the selected local Compose configuration in memory, without
+printing secrets. It uses `KC_HOSTNAME` and `KOCHWIKI_TEST_CALLBACK_URL` by default.
+If the callback port is occupied, change its environment value and apply before
+rerunning. Optional `--base-url` and `--callback-url` must match the canonical
+issuer and allowed callback. The test dependency PyJWT includes cryptographic
+signature verification.
+
+Checks cover exact client configuration, registration/login, a real local
+callback with state verification, code exchange, RS256 signature, issuer,
+audience, expiry, nonce and profile claims. Missing PKCE, unregistered callbacks,
+incorrect client secrets, incorrect PKCE verifiers and code reuse are rejected.
+It temporarily disables Standard Flow and changes the display-name mapper, then
+reapplies in a `finally` block and verifies settings, client/user/mapper IDs and
+the configured secret still work. If interrupted during that check, rerun the
+apply script. One uniquely named test account remains; generated account
+passwords, authorization codes and tokens are not printed or persisted.
 
 ## Local verification
 

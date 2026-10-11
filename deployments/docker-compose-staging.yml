@@ -1,5 +1,10 @@
 name: identity-provider-staging
 
+x-kochwiki:
+  client-secret: ${KOCHWIKI_CLIENT_SECRET:?Set KOCHWIKI_CLIENT_SECRET in deployments/.env}
+  redirect-uris: ${KOCHWIKI_REDIRECT_URIS:?Set KOCHWIKI_REDIRECT_URIS in deployments/.env}
+  logout-redirect-uris: ${KOCHWIKI_LOGOUT_REDIRECT_URIS:?Set KOCHWIKI_LOGOUT_REDIRECT_URIS in deployments/.env}
+
 services:
   postgres:
     image: postgres:16

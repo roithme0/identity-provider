@@ -1,0 +1,24 @@
+{
+  "clientId": "kochwiki",
+  "name": "Kochwiki",
+  "enabled": true,
+  "protocol": "openid-connect",
+  "publicClient": false,
+  "bearerOnly": false,
+  "clientAuthenticatorType": "client-secret",
+  "standardFlowEnabled": true,
+  "directAccessGrantsEnabled": false,
+  "implicitFlowEnabled": false,
+  "serviceAccountsEnabled": false,
+  "authorizationServicesEnabled": false,
+  "consentRequired": false,
+  "fullScopeAllowed": false,
+  "webOrigins": [],
+  "defaultClientScopes": [],
+  "optionalClientScopes": [],
+  "attributes": {
+    "pkce.code.challenge.method": "S256",
+    "oauth2.device.authorization.grant.enabled": "false",
+    "oidc.ciba.grant.enabled": "false"
+  }
+}

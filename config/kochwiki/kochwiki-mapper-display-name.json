@@ -1,0 +1,15 @@
+{
+  "name": "kochwiki-mapper-display-name",
+  "protocol": "openid-connect",
+  "protocolMapper": "oidc-usermodel-attribute-mapper",
+  "consentRequired": false,
+  "config": {
+    "user.attribute": "displayName",
+    "claim.name": "displayName",
+    "jsonType.label": "String",
+    "multivalued": "false",
+    "id.token.claim": "true",
+    "access.token.claim": "false",
+    "userinfo.token.claim": "false"
+  }
+}

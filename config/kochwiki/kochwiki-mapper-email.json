@@ -1,0 +1,14 @@
+{
+  "name": "kochwiki-mapper-email",
+  "protocol": "openid-connect",
+  "protocolMapper": "oidc-usermodel-property-mapper",
+  "consentRequired": false,
+  "config": {
+    "user.attribute": "email",
+    "claim.name": "email",
+    "jsonType.label": "String",
+    "id.token.claim": "true",
+    "access.token.claim": "false",
+    "userinfo.token.claim": "false"
+  }
+}
