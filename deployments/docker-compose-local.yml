@@ -1,11 +1,39 @@
 name: identity-provider-local
 
 services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deployments/.env}
+      POSTGRES_DB: ${KC_DB_NAME:?Set KC_DB_NAME in deployments/.env}
+      KC_DB_USER: ${KC_DB_USER:?Set KC_DB_USER in deployments/.env}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?Set KC_DB_PASSWORD in deployments/.env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init-keycloak.sh:/docker-entrypoint-initdb.d/10-keycloak.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$KC_DB_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.8.0
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
-      - "${PORT:-8080}:8080"
+      - "127.0.0.1:${PORT:-8080}:8080"
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_DATABASE: ${KC_DB_NAME:?Set KC_DB_NAME in deployments/.env}
+      KC_DB_USERNAME: ${KC_DB_USER:?Set KC_DB_USER in deployments/.env}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?Set KC_DB_PASSWORD in deployments/.env}
     command: start-dev
+
+volumes:
+  postgres-data:

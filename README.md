@@ -7,7 +7,10 @@ deployment.
 
 ## Local setup and updates
 
-Copy `deployments/.env.example` to `deployments/.env` and set bootstrap credentials and the desired port.
+Copy `deployments/.env.example` to `deployments/.env` and set bootstrap credentials,
+the desired port, database name (`KC_DB_NAME`), database user (`KC_DB_USER`),
+and two different random database passwords: `POSTGRES_PASSWORD`
+(database initialization administrator) and `KC_DB_PASSWORD` (Keycloak database owner).
 Keep credentials outside version control. Docker Compose and PowerShell are
 required.
 
@@ -23,13 +26,40 @@ deleting users. It uses Keycloak's bundled Admin CLI and fails on unsuccessful
 operations. Changes are sequential, not transactional; correct errors and rerun
 after a partial failure. Concurrent apply runs are not supported.
 
-The current Compose file uses `start-dev` without a mounted database volume.
-Container recreation can lose realm configuration and users. Applying settings
-does not recreate the container. Persistent database storage, HTTPS, backups,
-restricted network exposure and production administrator credentials remain
-separate deployment work. The checked-in port mapping may differ from an already
-running demo container; use `docker compose --env-file deployments/.env -f deployments/docker-compose-local.yml ps` to
-inspect the actual published port.
+The deployment still uses `start-dev`; HTTPS, production hostname/proxy setup
+and production administrator credentials remain separate deployment work.
+Keycloak's published port is bound to localhost only. The example environment
+uses port 8006; open `http://localhost:8006/realms/services/account/` to sign in
+or register. Use your configured port if it differs.
+
+## Database persistence
+
+A dedicated `postgres:16` service stores Keycloak realms, users, credentials,
+clients and other database state in the `postgres-data` named volume. Compose
+prefixes its name with the project name (`identity-provider-local_postgres-data`).
+The database has no published host port and is reached over the Docker network.
+Keycloak starts after the PostgreSQL health check succeeds; wait for Keycloak
+itself to finish starting before using the apply command.
+
+The PostgreSQL image creates the database using `POSTGRES_DB`, populated from
+`KC_DB_NAME`. Then `deployments/postgres/init-keycloak.sh` creates the restricted
+`KC_DB_USER` role and transfers database ownership to it. The role has no
+superuser, database-creation or role-creation privileges.
+The separate PostgreSQL administrator is used for initialization; Keycloak
+connects using its own database credentials. Keycloak manages its schema.
+Initialization runs only when the volume is empty. Changing the database name or
+user in `.env` does not rename an existing database or role; those changes require
+a coordinated database migration. Editing database passwords
+in `.env` does not change existing database credentials; credential rotation
+requires an explicit database change and coordinated application update.
+
+Ordinary container replacement retains the volume and its data. Keep the Compose
+project name stable so it continues using the same volume. Do not delete that
+volume when replacing containers. Changing the PostgreSQL major version requires
+a planned database upgrade; changing the image tag alone is insufficient.
+The former embedded-database demo accounts were intentionally not migrated.
+Backups and recovery are deferred; this volume does not protect against disk
+failure or accidental volume deletion.
 
 `Apply-Configuration.ps1 -ComposeFile <file> -Service <name>` can target another
 Compose deployment. Relative paths are resolved from the repository root. The wrapper uses the `.env` beside the selected Compose file when present, independently of the working directory. The helper runs inside the Keycloak container and uses
@@ -86,7 +116,7 @@ References: [realm import limitations](https://www.keycloak.org/server/importExp
 With Python 3.10 or later and the demo running, execute:
 
 ```powershell
-python -u ./tests/verify_local.py --base-url http://localhost:8080 --allow-user-creation
+python -u ./tests/verify_local.py --base-url http://127.0.0.1:8006 --allow-user-creation
 ```
 
 Use the port actually published by your container. The verification uses only
@@ -103,3 +133,15 @@ if interrupted at that point, run the apply command to restore configuration.
 It creates two uniquely named demo accounts, does not delete them, and prints
 their common prefix. Their random passwords are not printed or persisted.
 Lockout parameters are verified by readback, not by exercising 30 failed logins.
+
+Persistence verification deliberately replaces both local containers while
+retaining their database volume and creates one remaining test account:
+
+```powershell
+python -u ./tests/verify_persistence.py --base-url http://127.0.0.1:8006 --allow-recreate
+```
+
+This temporarily interrupts local sign-in. It verifies that both container IDs
+change, the database volume is reused, and realm settings, profile configuration,
+client IDs, user ID, display name and password login survive without reapplying
+configuration. Passwords are generated in memory and are not printed or saved.
