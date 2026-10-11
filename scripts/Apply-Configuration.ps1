@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$ComposeFile = 'deployments/docker-compose-local.yml',
-    [string]$Service = 'keycloak'
+    [string]$Service = 'keycloak',
+    [string]$EnvFile = ''
 )
 
 Set-StrictMode -Version Latest
@@ -13,7 +14,14 @@ $resolvedComposeFile = if ([System.IO.Path]::IsPathRooted($ComposeFile)) {
     Join-Path $repositoryRoot $ComposeFile
 }
 
-$deploymentEnvFile = Join-Path (Split-Path -Parent $resolvedComposeFile) '.env'
+$deploymentEnvFile = if ($EnvFile) {
+    if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $repositoryRoot $EnvFile }
+} else {
+    Join-Path (Split-Path -Parent $resolvedComposeFile) '.env'
+}
+if (-not (Test-Path -LiteralPath $deploymentEnvFile)) {
+    throw "Environment file not found: $deploymentEnvFile"
+}
 $composeArguments = @('-f', $resolvedComposeFile)
 if (Test-Path -LiteralPath $deploymentEnvFile) {
     $composeArguments += @('--env-file', $deploymentEnvFile)

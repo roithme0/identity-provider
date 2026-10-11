@@ -3,6 +3,8 @@ name: identity-provider-local
 services:
   postgres:
     image: postgres:16
+    networks:
+      - database
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deployments/.env}
       POSTGRES_DB: ${KC_DB_NAME:?Set KC_DB_NAME in deployments/.env}
@@ -23,17 +25,38 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:${PORT:-8080}:8080"
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
+      KC_HOSTNAME: ${KC_HOSTNAME:?Set KC_HOSTNAME to the public URL in deployments/.env}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "true"
+      KC_PROXY_HEADERS: xforwarded
       KC_DB: postgres
       KC_DB_URL_HOST: postgres
       KC_DB_URL_DATABASE: ${KC_DB_NAME:?Set KC_DB_NAME in deployments/.env}
       KC_DB_USERNAME: ${KC_DB_USER:?Set KC_DB_USER in deployments/.env}
       KC_DB_PASSWORD: ${KC_DB_PASSWORD:?Set KC_DB_PASSWORD in deployments/.env}
     command: start-dev
+    networks:
+      - proxy
+      - database
+
+  nginx:
+    image: nginx:1.28-alpine
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${BIND_PORT:?Set BIND_PORT in deployments/.env}:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - keycloak
+    networks:
+      - proxy
 
 volumes:
   postgres-data:
+
+networks:
+  proxy:
+  database:
+    internal: true

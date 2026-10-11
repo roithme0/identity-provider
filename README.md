@@ -1,9 +1,9 @@
 # Identity Provider
 
-Local Keycloak 26.8.0 setup for Kochwiki and future applications. Application
+Keycloak 26.8.0 deployments for Kochwiki and future applications. Application
 accounts belong to the `services` realm; `master` is reserved for administration.
-This repository does not yet integrate Kochwiki login or establish a production
-deployment.
+This repository does not yet integrate Kochwiki login. Staging and production
+deployment definitions are HTTP-only preparation, not a public production rollout.
 
 ## Local setup and updates
 
@@ -26,11 +26,50 @@ deleting users. It uses Keycloak's bundled Admin CLI and fails on unsuccessful
 operations. Changes are sequential, not transactional; correct errors and rerun
 after a partial failure. Concurrent apply runs are not supported.
 
-The deployment still uses `start-dev`; HTTPS, production hostname/proxy setup
-and production administrator credentials remain separate deployment work.
-Keycloak's published port is bound to localhost only. The example environment
-uses port 8006; open `http://localhost:8006/realms/services/account/` to sign in
-or register. Use your configured port if it differs.
+The local deployment uses `start-dev`. Nginx is the only service with a published
+host port, configured through `BIND_ADDRESS` and `BIND_PORT` (localhost by default). The example environment uses port 8006; open
+`http://localhost:8006/realms/services/account/` to sign in or register.
+Use your configured port if it differs. Local uses the same fixed hostname and explicit HTTP settings as staging/production; consistently access the URL from `KC_HOSTNAME` rather than switching between localhost and its IP address.
+
+## Staging and production preparation
+
+All Compose files use `deployments/.env`, copied from the single `.env.example`.
+Set credentials, `BIND_PORT`, `BIND_ADDRESS` and `KC_HOSTNAME` for the deployment.
+`KC_HOSTNAME` is the full external URL, including scheme and nonstandard port;
+the example uses `http://localhost:8006`. `BIND_ADDRESS` defaults to localhost.
+Each deployed repository copy supplies its own ignored `.env` and independent
+secrets. To run multiple environments from one checkout, override ports and
+hostname explicitly; the shared file otherwise gives them the same values.
+
+```powershell
+docker compose --env-file deployments/.env -f deployments/docker-compose-staging.yml up -d
+./scripts/Apply-Configuration.ps1 -ComposeFile deployments/docker-compose-staging.yml
+
+docker compose --env-file deployments/.env -f deployments/docker-compose-prod.yml up -d
+./scripts/Apply-Configuration.ps1 -ComposeFile deployments/docker-compose-prod.yml
+```
+
+Staging and production use `start`, fixed hostname configuration and
+`restart: unless-stopped` for all services. Each project has independent networks
+and its own `postgres-data` volume. The same initialization and realm configuration
+files are used in every environment. Do not override project names to the same
+value or share database volumes between environments.
+
+All three deployments include Nginx, Keycloak and PostgreSQL. Only Nginx publishes
+a port. Nginx overwrites forwarded client/protocol headers; Keycloak reads
+`X-Forwarded-*`. Docker DNS resolution allows Nginx to find a replacement Keycloak
+container without retaining its old address. PostgreSQL is on a separate internal
+network, joined only by Keycloak. Database and Keycloak management ports are not
+published. The admin console is reachable through the proxy alongside login;
+separate administrative access restrictions remain future deployment work.
+
+Certificates and HTTPS are deliberately deferred. These configurations do not
+provide encrypted login and must not be used for public authentication yet.
+Realm SSL requirements remain unchanged: non-local HTTP login may be rejected.
+Before public deployment, configure HTTPS and certificate renewal in Nginx,
+update `KC_HOSTNAME` to the stable HTTPS URL, and validate redirects, cookies,
+proxy headers and administrative access. Do not merely change the hostname to
+HTTPS while Nginx is still serving HTTP. Backups remain deferred.
 
 ## Database persistence
 
@@ -62,7 +101,10 @@ Backups and recovery are deferred; this volume does not protect against disk
 failure or accidental volume deletion.
 
 `Apply-Configuration.ps1 -ComposeFile <file> -Service <name>` can target another
-Compose deployment. Relative paths are resolved from the repository root. The wrapper uses the `.env` beside the selected Compose file when present, independently of the working directory. The helper runs inside the Keycloak container and uses
+Compose deployment. Relative paths are resolved from the repository root.
+The wrapper uses the adjacent `.env` for every Compose file, independently of the working directory.
+`-EnvFile <path>` overrides this selection; selected
+environment files must exist. The helper runs inside the Keycloak container and uses
 `IDP_ADMIN_SERVER` (default `http://localhost:8080`), `IDP_ADMIN_REALM` (default
 `master`), `IDP_ADMIN_USERNAME` and `IDP_ADMIN_PASSWORD` from its environment.
 For the local demo, credentials fall back to the container's bootstrap variables.
@@ -116,7 +158,7 @@ References: [realm import limitations](https://www.keycloak.org/server/importExp
 With Python 3.10 or later and the demo running, execute:
 
 ```powershell
-python -u ./tests/verify_local.py --base-url http://127.0.0.1:8006 --allow-user-creation
+python -u ./tests/verify_local.py --base-url http://localhost:8006 --allow-user-creation
 ```
 
 Use the port actually published by your container. The verification uses only
@@ -138,7 +180,7 @@ Persistence verification deliberately replaces both local containers while
 retaining their database volume and creates one remaining test account:
 
 ```powershell
-python -u ./tests/verify_persistence.py --base-url http://127.0.0.1:8006 --allow-recreate
+python -u ./tests/verify_persistence.py --base-url http://localhost:8006 --allow-recreate
 ```
 
 This temporarily interrupts local sign-in. It verifies that both container IDs
