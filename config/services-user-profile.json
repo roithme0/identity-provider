@@ -1,0 +1,33 @@
+{
+  "unmanagedAttributePolicy": null,
+  "attributes": [
+    {
+      "name": "username",
+      "displayName": "${username}",
+      "permissions": { "view": ["admin", "user"], "edit": ["admin", "user"] },
+      "validations": {
+        "length": { "min": 3, "max": 255 },
+        "username-prohibited-characters": {},
+        "up-username-not-idn-homograph": {}
+      }
+    },
+    {
+      "name": "email",
+      "displayName": "${email}",
+      "required": { "roles": ["user"] },
+      "permissions": { "view": ["admin", "user"], "edit": ["admin", "user"] },
+      "validations": { "email": {}, "length": { "max": 255 } }
+    },
+    {
+      "name": "displayName",
+      "displayName": "Display name",
+      "required": { "roles": ["user"] },
+      "permissions": { "view": ["admin", "user"], "edit": ["admin", "user"] },
+      "validations": {
+        "length": { "min": 1, "max": 50 },
+        "pattern": { "pattern": "^[^\\p{Cc}]+$", "error-message": "Control characters are not allowed." }
+      }
+    }
+  ],
+  "groups": []
+}
