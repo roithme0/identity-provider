@@ -126,8 +126,12 @@ def admin(compose_file: Path, *arguments: str) -> object:
         '--realm "${IDP_ADMIN_REALM:-master}" '
         '--user "${IDP_ADMIN_USERNAME:-$KC_BOOTSTRAP_ADMIN_USERNAME}"'
     )
+    compose_arguments = ["docker", "compose", "-f", str(compose_file)]
+    env_file = compose_file.parent / ".env"
+    if env_file.is_file():
+        compose_arguments.extend(["--env-file", str(env_file)])
     result = subprocess.run(
-        ["docker", "compose", "-f", str(compose_file), "exec", "-T", "keycloak",
+        [*compose_arguments, "exec", "-T", "keycloak",
          "bash", "-c", shell, "kcadm", *arguments],
         capture_output=True, text=True, encoding="utf-8", timeout=60, check=False,
     )
@@ -223,7 +227,7 @@ def verify(base_url: str, compose_file: Path, allow_user_creation: bool) -> None
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Verify the running local realm using its hosted login forms.")
     parser.add_argument("--base-url", default="http://localhost:8080")
-    parser.add_argument("--compose-file", type=Path, default=Path(__file__).resolve().parents[1] / "docker-compose-local.yml")
+    parser.add_argument("--compose-file", type=Path, default=Path(__file__).resolve().parents[1] / "deployments" / "docker-compose-local.yml")
     parser.add_argument("--allow-user-creation", action="store_true")
     args = parser.parse_args()
     verify(args.base_url, args.compose_file.resolve(), args.allow_user_creation)

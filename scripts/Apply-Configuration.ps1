@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ComposeFile = 'docker-compose-local.yml',
+    [string]$ComposeFile = 'deployments/docker-compose-local.yml',
     [string]$Service = 'keycloak'
 )
 
@@ -13,9 +13,15 @@ $resolvedComposeFile = if ([System.IO.Path]::IsPathRooted($ComposeFile)) {
     Join-Path $repositoryRoot $ComposeFile
 }
 
+$deploymentEnvFile = Join-Path (Split-Path -Parent $resolvedComposeFile) '.env'
+$composeArguments = @('-f', $resolvedComposeFile)
+if (Test-Path -LiteralPath $deploymentEnvFile) {
+    $composeArguments += @('--env-file', $deploymentEnvFile)
+}
+
 function Invoke-Compose {
     param([Parameter(Mandatory)][string[]]$Arguments)
-    & docker compose -f $resolvedComposeFile @Arguments
+    & docker compose @composeArguments @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "Docker Compose failed with exit code $LASTEXITCODE. Configuration may be partially applied; correct the error and rerun."
     }

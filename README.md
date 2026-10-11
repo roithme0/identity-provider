@@ -7,12 +7,12 @@ deployment.
 
 ## Local setup and updates
 
-Copy `.env.example` to `.env` and set bootstrap credentials and the desired port.
+Copy `deployments/.env.example` to `deployments/.env` and set bootstrap credentials and the desired port.
 Keep credentials outside version control. Docker Compose and PowerShell are
 required.
 
 ```powershell
-docker compose -f docker-compose-local.yml up -d
+docker compose --env-file deployments/.env -f deployments/docker-compose-local.yml up -d
 ./scripts/Apply-Configuration.ps1
 ```
 
@@ -28,11 +28,11 @@ Container recreation can lose realm configuration and users. Applying settings
 does not recreate the container. Persistent database storage, HTTPS, backups,
 restricted network exposure and production administrator credentials remain
 separate deployment work. The checked-in port mapping may differ from an already
-running demo container; use `docker compose -f docker-compose-local.yml ps` to
+running demo container; use `docker compose --env-file deployments/.env -f deployments/docker-compose-local.yml ps` to
 inspect the actual published port.
 
 `Apply-Configuration.ps1 -ComposeFile <file> -Service <name>` can target another
-Compose deployment. The helper runs inside the Keycloak container and uses
+Compose deployment. Relative paths are resolved from the repository root. The wrapper uses the `.env` beside the selected Compose file when present, independently of the working directory. The helper runs inside the Keycloak container and uses
 `IDP_ADMIN_SERVER` (default `http://localhost:8080`), `IDP_ADMIN_REALM` (default
 `master`), `IDP_ADMIN_USERNAME` and `IDP_ADMIN_PASSWORD` from its environment.
 For the local demo, credentials fall back to the container's bootstrap variables.
