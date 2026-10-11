@@ -9,8 +9,6 @@ services:
   postgres:
     image: postgres:16
     restart: unless-stopped
-    networks:
-      - database
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deployments/.env}
       POSTGRES_DB: ${KC_DB_NAME:?Set KC_DB_NAME in deployments/.env}
@@ -25,6 +23,8 @@ services:
       timeout: 5s
       retries: 12
       start_period: 10s
+    networks:
+      - database
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.8.0

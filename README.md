@@ -203,67 +203,64 @@ without recreating users or clients or generating a new secret. The configured
 secret is reapplied unchanged. Changing it deliberately rotates it and requires
 a coordinated backend update. Apply remains sequential and nontransactional.
 
-### Local OIDC verification
+### Disposable verification
 
-The stand-in callback verifies the provider configuration before Kochwiki's
-backend integration exists. It binds only to `127.0.0.1` and exists only while
-the test runs. It automates the hosted login forms; it does not test browser
-rendering or implement application sessions.
+Automated registration, OIDC and persistence verification runs against
+`deployments/docker-compose-test.yml`, never the persistent local deployment.
+It uses the same Keycloak/PostgreSQL/Nginx versions, database initialization,
+realm/profile/client files and configuration apply scripts. The isolated project
+is `identity-provider-test`, with a localhost proxy on port 8016 and a stand-in
+OIDC callback on port 8766. Fixed credentials in this Compose file are public
+test fixtures, not deployment secrets. No real `.env` values are used.
+
+Install the test dependency once, then run:
 
 ```powershell
 python -m venv .venv
 ./.venv/Scripts/python.exe -m pip install -r tests/requirements.txt
-./.venv/Scripts/python.exe -u tests/verify_oidc.py --allow-user-creation
+./scripts/Verify-Disposable.ps1
 ```
 
-The tool reads the selected local Compose configuration in memory, without
-printing secrets. It uses `KC_HOSTNAME` and `KOCHWIKI_TEST_CALLBACK_URL` by default.
-If the callback port is occupied, change its environment value and apply before
-rerunning. Optional `--base-url` and `--callback-url` must match the canonical
-issuer and allowed callback. The test dependency PyJWT includes cryptographic
-signature verification.
-
-Checks cover exact client configuration, registration/login, a real local
-callback with state verification, code exchange, RS256 signature, issuer,
-audience, expiry, nonce and profile claims. Missing PKCE, unregistered callbacks,
-incorrect client secrets, incorrect PKCE verifiers and code reuse are rejected.
-It temporarily disables Standard Flow and changes the display-name mapper, then
-reapplies in a `finally` block and verifies settings, client/user/mapper IDs and
-the configured secret still work. If interrupted during that check, rerun the
-apply script. One uniquely named test account remains; generated account
-passwords, authorization codes and tokens are not printed or persisted.
-
-## Local verification
-
-With Python 3.10 or later and the demo running, execute:
+To also verify the real KochWiki backend through its gateway:
 
 ```powershell
-python -u ./tests/verify_local.py --base-url http://localhost:8006 --allow-user-creation
+./scripts/Verify-Disposable.ps1 -KochwikiRepository ../kochwiki-v2
 ```
 
-Use the port actually published by your container. The verification uses only
-Python's standard library and is restricted to localhost. Its HTTP cookie client
-accepts Secure cookies locally to exercise Keycloak's hosted forms without
-changing server security settings. It is not a browser rendering test.
+The optional KochWiki stack has its own temporary database and gateway on
+localhost port 8012. It builds only the backend and uses the real gateway
+configuration with a static Nginx placeholder for frontend routing. It does not
+modify either application's regular local `.env` or containers. `-Python <path>`
+selects an existing Python environment with PyJWT and cryptography installed.
 
-The checks cover registration fields, invalid passwords and display names,
-unverified immediate access, duplicate email rejection, duplicate display-name
-acceptance, email/password login, and a repeat apply that corrects a deliberately
-changed password-length setting while preserving users and clients. The test
-temporarily changes the minimum length to 16 before applying the configured 15;
-if interrupted at that point, run the apply command to restore configuration.
-It creates two uniquely named demo accounts, does not delete them, and prints
-their common prefix. Their random passwords are not printed or persisted.
-Lockout parameters are verified by readback, not by exercising 30 failed logins.
+The runner starts a fresh provider, waits for readiness, applies configuration,
+runs all three provider verifiers, optionally runs the KochWiki verifier, and
+tears down the test containers, networks and volumes in `finally`, including on
+test failures. Persistence verification retains the test database volume across
+container replacement within that run; final teardown removes it. Generated
+passwords, codes and tokens are not printed or saved. Accounts exist only in the
+test instance and disappear with its database.
 
-Persistence verification deliberately replaces both local containers while
-retaining their database volume and creates one remaining test account:
+Runs are sequential: the fixed projects and ports do not support concurrent
+runs. The runner refuses an already existing test container project or test database volume. A killed
+PowerShell process or Docker failure can prevent teardown. After inspecting any
+leftover test resources, remove only these fixed projects before rerunning:
 
 ```powershell
-python -u ./tests/verify_persistence.py --base-url http://localhost:8006 --allow-recreate
+docker compose --project-name identity-provider-test --env-file deployments/.env.example -f deployments/docker-compose-test.yml down --volumes
+docker compose --project-name kochwiki-auth-test --env-file ../kochwiki-v2/deployment/.env.example -f ../kochwiki-v2/deployment/docker-compose-auth-test.yml down --volumes
 ```
 
-This temporarily interrupts local sign-in. It verifies that both container IDs
-change, the database volume is reused, and realm settings, profile configuration,
-client IDs, user ID, display name and password login survive without reapplying
-configuration. Passwords are generated in memory and are not printed or saved.
+Never substitute a regular local/staging/production Compose file in those cleanup
+commands. Existing demo accounts in the persistent local realm are untouched.
+
+Provider verification covers hosted registration/login, password/profile
+validation, duplicate emails and display names, unverified immediate access,
+realm drift correction, confidential client/allowlist/PKCE settings, callback
+state, signature/issuer/audience/expiry/nonce/profile claims, invalid credentials,
+invalid verifier and code reuse. Client/mapper drift correction preserves IDs
+and the secret. Persistence checks replace PostgreSQL and Keycloak and verify
+realm, profile, clients, user identity and password login survive without reapply.
+Lockout values are verified by readback, not 30 failed logins. These HTTP/form
+checks do not establish browser rendering, application sessions or production
+readiness. The normal KochWiki unit suite simulates the provider separately.

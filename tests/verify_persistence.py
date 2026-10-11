@@ -10,14 +10,12 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
+from disposable import compose_arguments, require_disposable
 from verify_local import Browser, admin, authorized, json_object, users
 
 
 def compose(compose_file: Path, *arguments: str) -> str:
-    command = ["docker", "compose", "-f", str(compose_file)]
-    env_file = compose_file.parent / ".env"
-    if env_file.is_file():
-        command.extend(["--env-file", str(env_file)])
+    command = compose_arguments(compose_file)
     result = subprocess.run(
         [*command, *arguments], capture_output=True, text=True,
         encoding="utf-8", timeout=180, check=False,
@@ -59,10 +57,11 @@ def wait_for_realm(base_url: str) -> None:
 
 def verify(base_url: str, compose_file: Path, allow_recreate: bool) -> None:
     if not allow_recreate:
-        raise RuntimeError("Pass --allow-recreate to acknowledge local downtime and a remaining test account.")
+        raise RuntimeError("Pass --allow-recreate to allow disposable container replacement.")
     if urlparse(base_url).hostname not in ("localhost", "127.0.0.1"):
         raise RuntimeError("Persistence verification is restricted to localhost.")
 
+    require_disposable(compose_file, base_url)
     expected = json_object(json.loads(
         (Path(__file__).resolve().parents[1] / "config/services-realm.json").read_text(encoding="utf-8")
     ))
@@ -102,13 +101,13 @@ def verify(base_url: str, compose_file: Path, allow_recreate: bool) -> None:
     assert preserved[0].get("attributes") == original[0].get("attributes")
     assert authorized(Browser(base_url).login(email, password)), "Password login failed after recreation."
     print("PASS: realm, profile, clients, user ID and password login survived both container replacements")
-    print(f"A test account remains: {email}. Its password is not printed or persisted.")
+    print(f"Temporary test account: {email}. Its password is not printed or persisted.")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Verify database persistence by replacing the local containers.")
-    parser.add_argument("--base-url", default="http://localhost:8080")
-    parser.add_argument("--compose-file", type=Path, default=Path(__file__).resolve().parents[1] / "deployments/docker-compose-local.yml")
+    parser = argparse.ArgumentParser(description="Verify persistence by replacing disposable test containers.")
+    parser.add_argument("--base-url", default="http://localhost:8016")
+    parser.add_argument("--compose-file", type=Path, default=Path(__file__).resolve().parents[1] / "deployments/docker-compose-test.yml")
     parser.add_argument("--allow-recreate", action="store_true")
     args = parser.parse_args()
     verify(args.base_url, args.compose_file.resolve(), args.allow_recreate)

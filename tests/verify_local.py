@@ -16,6 +16,9 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener, HTTPCookieProcessor
 
 
+from disposable import compose_arguments, require_disposable
+
+
 class Page(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -126,12 +129,9 @@ def admin(compose_file: Path, *arguments: str) -> object:
         '--realm "${IDP_ADMIN_REALM:-master}" '
         '--user "${IDP_ADMIN_USERNAME:-$KC_BOOTSTRAP_ADMIN_USERNAME}"'
     )
-    compose_arguments = ["docker", "compose", "-f", str(compose_file)]
-    env_file = compose_file.parent / ".env"
-    if env_file.is_file():
-        compose_arguments.extend(["--env-file", str(env_file)])
+    command = compose_arguments(compose_file)
     result = subprocess.run(
-        [*compose_arguments, "exec", "-T", "keycloak",
+        [*command, "exec", "-T", "keycloak",
          "bash", "-c", shell, "kcadm", *arguments],
         capture_output=True, text=True, encoding="utf-8", timeout=60, check=False,
     )
@@ -155,10 +155,11 @@ def users(compose_file: Path, email: str) -> list[dict[str, object]]:
 
 def verify(base_url: str, compose_file: Path, allow_user_creation: bool) -> None:
     if not allow_user_creation:
-        raise RuntimeError("Pass --allow-user-creation to acknowledge that demo test accounts will remain.")
+        raise RuntimeError("Pass --allow-user-creation to allow accounts in the disposable test instance.")
     if urlparse(base_url).hostname not in ("localhost", "127.0.0.1"):
-        raise RuntimeError("This verification is restricted to a local demo.")
+        raise RuntimeError("This verification is restricted to the disposable provider.")
 
+    require_disposable(compose_file, base_url)
     root = Path(__file__).resolve().parents[1]
     expected = json_object(json.loads((root / "config/services-realm.json").read_text(encoding="utf-8")))
     current = json_object(admin(compose_file, "get", "realms/services"))
@@ -212,7 +213,7 @@ def verify(base_url: str, compose_file: Path, allow_user_creation: bool) -> None
     assert json_object(admin(compose_file, "get", "realms/services")).get("passwordPolicy") == "length(16)"
     applied = subprocess.run(
         ["powershell.exe", "-NoProfile", "-File", str(root / "scripts/Apply-Configuration.ps1"),
-         "-ComposeFile", str(compose_file)], capture_output=True, text=True, encoding="utf-8", timeout=90, check=False,
+         "-ComposeFile", str(compose_file), "-EnvFile", str(root / "deployments/.env.example")], capture_output=True, text=True, encoding="utf-8", timeout=90, check=False,
     )
     assert applied.returncode == 0, "Configuration reapply failed"
     preserved = users(compose_file, email)
@@ -221,13 +222,13 @@ def verify(base_url: str, compose_file: Path, allow_user_creation: bool) -> None
     assert admin(compose_file, "get", "clients", "-r", "services", "--fields", "id") == client_snapshot
     assert authorized(Browser(base_url).login(email, password)), "Login failed after reapply"
     print("PASS: repeat apply corrects managed-setting drift and preserves users, clients and login")
-    print(f"Verification completed. Two demo accounts remain with prefix auth-check-{run}.")
+    print(f"Verification completed. Two temporary test accounts have prefix auth-check-{run}.")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Verify the running local realm using its hosted login forms.")
-    parser.add_argument("--base-url", default="http://localhost:8080")
-    parser.add_argument("--compose-file", type=Path, default=Path(__file__).resolve().parents[1] / "deployments" / "docker-compose-local.yml")
+    parser = argparse.ArgumentParser(description="Verify the disposable realm using its hosted login forms.")
+    parser.add_argument("--base-url", default="http://localhost:8016")
+    parser.add_argument("--compose-file", type=Path, default=Path(__file__).resolve().parents[1] / "deployments" / "docker-compose-test.yml")
     parser.add_argument("--allow-user-creation", action="store_true")
     args = parser.parse_args()
     verify(args.base_url, args.compose_file.resolve(), args.allow_user_creation)

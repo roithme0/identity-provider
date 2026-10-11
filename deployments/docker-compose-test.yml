@@ -1,0 +1,68 @@
+name: identity-provider-test
+
+x-disposable-test: true
+x-kochwiki:
+  client-secret: disposable-test-client-secret-not-for-production
+  redirect-uris: http://localhost:8012/api/auth/callback
+  logout-redirect-uris: http://localhost:8012/signed-out
+  test-callback-url: http://localhost:8766/callback
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: disposable-test-admin
+      POSTGRES_DB: keycloak
+      KC_DB_USER: keycloak
+      KC_DB_PASSWORD: disposable-test-db
+    volumes:
+      - test-postgres-data:/var/lib/postgresql/data
+      - ./postgres/init-keycloak.sh:/docker-entrypoint-initdb.d/10-keycloak.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -h 127.0.0.1 -U "$$KC_DB_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - database
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: test-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: disposable-test-admin
+      KC_HOSTNAME: http://localhost:8016
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: disposable-test-db
+    command: start-dev
+    networks:
+      - proxy
+      - database
+
+  nginx:
+    image: nginx:1.28-alpine
+    ports:
+      - "127.0.0.1:8016:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - keycloak
+    networks:
+      - proxy
+
+volumes:
+  test-postgres-data:
+
+networks:
+  proxy:
+  database:
+    internal: true

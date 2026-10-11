@@ -18,6 +18,7 @@ from urllib.request import Request, urlopen
 
 import jwt
 
+from disposable import configuration, require_disposable
 from verify_local import Browser, Page, Response, admin, authorized, json_object, users
 
 
@@ -115,14 +116,7 @@ class KochwikiBrowser(Browser):
 
 
 def compose_configuration(compose_file: Path) -> dict[str, object]:
-    result = subprocess.run(
-        ["docker", "compose", "--env-file", str(compose_file.parent / ".env"),
-         "-f", str(compose_file), "config", "--format", "json"],
-        capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
-    )
-    if result.returncode:
-        raise RuntimeError("Cannot resolve the local Compose configuration.")
-    return json_object(json.loads(result.stdout))
+    return configuration(compose_file)
 
 
 def client(compose_file: Path) -> dict[str, object]:
@@ -174,7 +168,7 @@ def validate_id_token(
 def reapply(root: Path, compose_file: Path) -> None:
     result = subprocess.run(
         ["powershell.exe", "-NoProfile", "-File", str(root / "scripts/Apply-Configuration.ps1"),
-         "-ComposeFile", str(compose_file)],
+         "-ComposeFile", str(compose_file), "-EnvFile", str(root / "deployments/.env.example")],
         capture_output=True, text=True, encoding="utf-8", timeout=180, check=False,
     )
     assert result.returncode == 0, "Repeat configuration apply failed; rerun the apply script."
@@ -182,9 +176,8 @@ def reapply(root: Path, compose_file: Path) -> None:
 
 def verify(base_url: str | None, compose_file: Path, callback_url: str | None, allow_creation: bool) -> None:
     if not allow_creation:
-        raise RuntimeError("Pass --allow-user-creation; one local verification account will remain.")
-    if compose_file.name != "docker-compose-local.yml":
-        raise RuntimeError("This verification is restricted to the local Compose deployment.")
+        raise RuntimeError("Pass --allow-user-creation; accounts are created in the disposable test instance.")
+
     root = Path(__file__).resolve().parents[1]
     configuration = compose_configuration(compose_file)
     settings = json_object(configuration["x-kochwiki"])
@@ -200,6 +193,7 @@ def verify(base_url: str | None, compose_file: Path, callback_url: str | None, a
     configured_callback = settings["test-callback-url"]
     assert isinstance(configured_callback, str)
     callback_url = callback_url or configured_callback
+    require_disposable(compose_file, base_url)
     issuer = f"{base_url}/realms/services"
     with urlopen(f"{issuer}/.well-known/openid-configuration", timeout=20) as response:
         discovery = json_object(json.loads(response.read()))
@@ -322,7 +316,7 @@ def verify(base_url: str | None, compose_file: Path, callback_url: str | None, a
         refreshed = validate_id_token(tokens, issuer, jwks_url, browser.nonce, email, display_name)
         assert refreshed["sub"] == subject, "User identity changed after reapply."
         print("PASS: repeat apply repairs client/mapper drift and preserves client, user, mapper IDs and secret")
-    print(f"Verification completed. One demo account remains: oidc-check-{run}@example.invalid")
+    print(f"Verification completed. Temporary test account: oidc-check-{run}@example.invalid")
 
 
 if __name__ == "__main__":
@@ -330,7 +324,7 @@ if __name__ == "__main__":
     parser.add_argument("--base-url", default=None)
     parser.add_argument("--callback-url", default=None)
     parser.add_argument("--compose-file", type=Path, default=Path(__file__).resolve().parents[1]
-                        / "deployments/docker-compose-local.yml")
+                        / "deployments/docker-compose-test.yml")
     parser.add_argument("--allow-user-creation", action="store_true")
     arguments = parser.parse_args()
     try:

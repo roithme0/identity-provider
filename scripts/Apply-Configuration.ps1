@@ -23,6 +23,9 @@ if (-not (Test-Path -LiteralPath $deploymentEnvFile)) {
     throw "Environment file not found: $deploymentEnvFile"
 }
 $composeArguments = @('-f', $resolvedComposeFile, '--env-file', $deploymentEnvFile)
+if ([System.IO.Path]::GetFileName($resolvedComposeFile) -eq 'docker-compose-test.yml') {
+    $composeArguments += @('--project-name', 'identity-provider-test')
+}
 
 function Invoke-Compose {
     param([Parameter(Mandatory)][string[]]$Arguments)
